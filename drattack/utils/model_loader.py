@@ -1,3 +1,18 @@
+"""
+Model Loader: Initialize and manage different types of LLM backends
+
+This module handles:
+- Loading open-source models (Llama2, Vicuna) from HuggingFace
+- Initializing API-based models (GPT, Gemini) via wrapper classes
+- Setting up conversation templates for each model
+- Configuring tokenizers and device placement
+- Managing multi-processing worker threads for model inference
+
+Supported Models:
+  - Open-source: Llama-2-7b-chat, Llama-2-13b-chat, Vicuna-7B
+  - API-based: gpt-4, gpt-3.5-turbo, gemini-pro
+"""
+
 from copy import deepcopy
 
 import torch

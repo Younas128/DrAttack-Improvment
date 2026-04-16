@@ -1,3 +1,20 @@
+"""
+Attack Manager: Orchestrates the overall DrAttack jailbreak process
+
+This module contains the PromptAttack class which:
+1. Manages the attack lifecycle for each target behavior/goal
+2. Coordinates between data loading, model initialization, and attack execution
+3. Implements level-wise evolutionary search starting from deepest parsing tree
+4. Logs results and tracks jailbreak success/failure for each prompt variant
+5. Handles both open-source (Llama, Vicuna) and API-based models (GPT, Gemini)
+
+Key Features:
+- Supports multiple attack parameters: verb substitution, noun substitution, word games, suffix addition
+- Caching mechanism to avoid redundant API calls
+- Configurable evaluation via test prefixes or GPT evaluation
+- Results logging in JSON format for detailed analysis
+"""
+
 import json
 import torch
 

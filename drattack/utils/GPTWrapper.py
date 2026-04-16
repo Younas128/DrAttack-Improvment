@@ -1,3 +1,15 @@
+"""
+GPT API Wrapper: Interface for OpenAI GPT models (GPT-4, GPT-3.5-turbo)
+
+This module provides a unified wrapper around OpenAI's ChatCompletion API:
+- Handles authentication via API key from config file
+- Implements retry logic with exponential backoff for rate limiting
+- Supports both single and multi-turn conversations
+- Includes timeout handling for different model types
+
+Supported Models: gpt-4, gpt-3.5-turbo, and variants
+"""
+
 import openai
 import time
 

@@ -1,3 +1,24 @@
+"""
+Genetic Algorithm Attack: Level-wise Random Search for Sub-prompt Optimization
+
+This module implements the core DrAttack algorithm:
+1. Decomposes harmful prompts into sub-prompts based on syntactic parsing tree
+2. Performs level-wise (deepest-first) random search on synonym space
+3. Uses embedding-based fitness scoring to evaluate prompt variants
+4. Implements ICL (In-Context Learning) reconstruction with harmless demonstrations
+5. Supports multiple obfuscation techniques: word games, suffix padding, etc.
+
+Algorithm Flow:
+- Start at deepest level of parsing tree
+- Expand population with top-k synonym substitutions (noun/verb)
+- Score each variant using semantic embeddings (Ada-002)
+- Check for jailbreak success using test prefixes or GPT evaluation
+- If successful, return; otherwise, move to next shallower level
+- Repeat until jailbreak or all levels exhausted
+
+Supported Models: GPT-4, GPT-3.5, Gemini, Llama2, Vicuna
+"""
+
 import os
 import json
 import random
@@ -10,9 +31,6 @@ from transformers import GPT2Tokenizer, set_seed
 from ..utils.sentence_tokenizer import Text_Embedding_Ada
 from ..utils.GPTWrapper import GPTAPIWrapper
 from ..utils.GeminiWrapper import GeminiAPIWrapper
-
-
-# Following is level-wise DrAttack random search
 
 class DrAttack_random_search():
 

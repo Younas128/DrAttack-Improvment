@@ -1,3 +1,17 @@
+"""
+Sentence Tokenizer: Text embedding and semantic similarity scoring
+
+This module provides:
+- Text_Embedding_Ada class for obtaining embeddings via OpenAI's ada-002 model
+- Caching mechanism to avoid duplicate embedding API calls
+- Semantic similarity scoring using cosine distance
+- Timeout and retry logic for API reliability
+
+Usage:
+- Get embeddings: embeddings = tokenizer.get_embedding(text)
+- Cache management for efficient batch processing
+"""
+
 import time
 import openai
 import os

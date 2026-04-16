@@ -1,3 +1,15 @@
+"""
+Data Utilities: Load and process harmful behavior datasets
+
+This module provides utilities for:
+- Loading AdvBench harmful behaviors CSV file
+- Parsing goals and target descriptions
+- Managing data offset for batch processing
+- Preparing data for attack experiments
+
+Supported Datasets: AdvBench (CSV format with goal/target columns)
+"""
+
 import pandas as pd
 
 def get_goals_and_targets(params):

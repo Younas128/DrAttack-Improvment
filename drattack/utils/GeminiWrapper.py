@@ -1,3 +1,14 @@
+"""
+Gemini API Wrapper: Interface for Google's Gemini models
+
+This module provides a unified wrapper around Google's Generative AI API:
+- Handles authentication via API key from config file
+- Implements support for Google's Gemini Pro model
+- Manages API interactions and response formatting
+
+Supported Models: gemini-pro
+"""
+
 import google.generativeai as genai
 
 with open('../../api_keys/google_api_key.txt') as file:
