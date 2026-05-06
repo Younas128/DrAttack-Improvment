@@ -16,10 +16,8 @@ Key Features:
 """
 
 import json
-import torch
 
 from ..utils.GPTWrapper import GPTAPIWrapper
-from ..utils.GeminiWrapper import GeminiAPIWrapper
 from ..ga.ga_attack import DrAttack_random_search
 
 class PromptAttack(object):
@@ -95,7 +93,7 @@ class PromptAttack(object):
         self.logfile = logfile
         if logfile is not None:
             with open(logfile, 'w') as f:
-                if isinstance(self.worker.model, GPTAPIWrapper) or isinstance(self.worker.model, GeminiAPIWrapper):
+                if isinstance(self.worker.model, GPTAPIWrapper):
                     json.dump({
                             'params': {
                                 'goals': goals,
@@ -142,7 +140,6 @@ class PromptAttack(object):
                 mpa_kwargs[key[4:]] = kwargs[key]
         return mpa_kwargs
 
-    @torch.no_grad()
     def evolve(self):
         """
         Executes the individual prompt attack.
@@ -202,54 +199,53 @@ class PromptAttack(object):
         total_prompt_num = 0
         total_token_num = 0
 
-        with torch.no_grad():
-            for i in range(len(self.goals)):
-                print(f"Goal {i+1}/{len(self.goals)}")
-                print(self.goals[i:i+1][0])
-                attack = DrAttack_random_search(
-                    self.goals[i:i+1][0],
-                    self.prompt_info_path,
-                    self.worker,
-                    verb_sub=self.verb_sub,
-                    noun_sub=self.noun_sub,
-                    noun_wordgame=self.noun_wordgame,
-                    suffix = self.suffix,
-                    load_cache=self.load_cache,
-                    gpt_eval=self.gpt_eval,
-                    topk_sub=self.topk_sub,
-                    sub_threshold=self.sub_threshold,
-                    vis_dict_path=self.vis_dict_path,
-                    wordgame_template=self.wordgame_template,
-                    demo_suffix_template=self.demo_suffix_template,
-                    general_template=self.general_template,
-                    gpt_eval_template=self.gpt_eval_template,
-                    test_prefixes=self.test_prefixes
-                )
-                sentence, new_prompt, score, output, prompt_num, token_num = attack.evolve()
+        for i in range(len(self.goals)):
+            print(f"Goal {i+1}/{len(self.goals)}")
+            print(self.goals[i:i+1][0])
+            attack = DrAttack_random_search(
+                self.goals[i:i+1][0],
+                self.prompt_info_path,
+                self.worker,
+                verb_sub=self.verb_sub,
+                noun_sub=self.noun_sub,
+                noun_wordgame=self.noun_wordgame,
+                suffix=self.suffix,
+                load_cache=self.load_cache,
+                gpt_eval=self.gpt_eval,
+                topk_sub=self.topk_sub,
+                sub_threshold=self.sub_threshold,
+                vis_dict_path=self.vis_dict_path,
+                wordgame_template=self.wordgame_template,
+                demo_suffix_template=self.demo_suffix_template,
+                general_template=self.general_template,
+                gpt_eval_template=self.gpt_eval_template,
+                test_prefixes=self.test_prefixes
+            )
+            sentence, new_prompt, score, output, prompt_num, token_num = attack.evolve()
 
-                jailbroken = not any([prefix in output for prefix in self.test_prefixes])
+            jailbroken = not any([prefix in output for prefix in self.test_prefixes])
 
-                solution = any([prefix in output for prefix in self.solution_prefixes])
+            solution = any([prefix in output for prefix in self.solution_prefixes])
 
-                total_prompt_num += prompt_num
-                total_token_num += token_num
+            total_prompt_num += prompt_num
+            total_token_num += token_num
 
-                with open(self.logfile, 'r') as f:
-                    log = json.load(f)
+            with open(self.logfile, 'r') as f:
+                log = json.load(f)
 
-                if jailbroken:
-                    jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence, 'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num':token_num}
-                    log['jail_break'].append(jailbroken_data)
-                elif solution: 
-                    jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence,  'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num':token_num}
-                    log['solution'].append(jailbroken_data)
-                else:
-                    jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence,  'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num':token_num}
-                    log['reject'].append(jailbroken_data)
+            if jailbroken:
+                jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence, 'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num': token_num}
+                log['jail_break'].append(jailbroken_data)
+            elif solution:
+                jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence, 'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num': token_num}
+                log['solution'].append(jailbroken_data)
+            else:
+                jailbroken_data = {'goal': self.goals[i:i+1][0], 'optimized prompt': sentence, 'attack prompt': new_prompt, 'attack output': output, 'negative similarity score': float(score), 'prompt trial': prompt_num, 'prompt token num': token_num}
+                log['reject'].append(jailbroken_data)
 
-                with open(self.logfile, 'w') as json_file:
-                    json.dump(log, json_file, indent=4)
-                curr_jb.append(jailbroken)
+            with open(self.logfile, 'w') as json_file:
+                json.dump(log, json_file, indent=4)
+            curr_jb.append(jailbroken)
 
         print(f"Total jailborke: {sum(curr_jb)}")
         print(f"Total prompt number: {total_prompt_num}")

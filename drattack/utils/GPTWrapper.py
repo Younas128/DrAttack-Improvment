@@ -1,98 +1,115 @@
 """
-GPT API Wrapper: Interface for OpenAI GPT models (GPT-4, GPT-3.5-turbo)
+GPT API Wrapper: Interface for OpenAI GPT models (GPT-4, GPT-4o, GPT-3.5-turbo)
 
-This module provides a unified wrapper around OpenAI's ChatCompletion API:
+This module provides a unified wrapper around OpenAI's ChatCompletion API using the modern >=1.0.0 SDK:
 - Handles authentication via API key from config file
 - Implements retry logic with exponential backoff for rate limiting
 - Supports both single and multi-turn conversations
-- Includes timeout handling for different model types
-
-Supported Models: gpt-4, gpt-3.5-turbo, and variants
 """
 
-import openai
+import os
 import time
+from pathlib import Path
+from openai import OpenAI, RateLimitError, APIError, APITimeoutError
 
-with open('../../api_keys/openai_key.txt') as file:
-    openai_key = file.read()
-openai.api_key = openai_key
+def _load_api_key():
+    """Load OpenAI API key from file or environment variable."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if key:
+        return key.strip()
 
-# Define a wrapper around the GPT-4 API to match the interface you need.
+    possible_paths = [
+        Path(__file__).parent.parent.parent / "api_keys" / "openai_key.txt",
+        Path("api_keys/openai_key.txt"),
+        Path("../../api_keys/openai_key.txt"),
+    ]
+    for path in possible_paths:
+        if path.exists():
+            with open(path, "r") as f:
+                return f.read().strip()
+
+    raise FileNotFoundError("OpenAI API key not found. Create api_keys/openai_key.txt")
+
+_client = OpenAI(api_key=_load_api_key())
+
 class GPTAPIWrapper:
-    def __init__(self, model="gpt-3.5-turbo-0613", max_tokens=30):
-        
-        # Support for attack framework
+    def __init__(self, model="gpt-4o-mini", max_tokens=2048):
         self.name = "openai-gpt"
-
-        # Configurable model params
         self.model = model
         self.max_tokens = max_tokens
-    
-    def logits(self, *args, **kwargs):
-        # Convert args and kwargs into a prompt for GPT-4 API
-        # and get the logits from the response
-        # Note: As of my last training data, OpenAI's API does not directly provide logits,
-        # so you would need to get creative with how to simulate or retrieve this information.
-        pass
-    
-    # Add other methods if necessary, like contrast_logits, test, test_loss, etc.
-    # Those might not have a direct equivalent in the GPT-4 API, so you'll need to
-    # figure out what functionality you are expecting and how to achieve it with the API.
-    
-    def __call__(self, prompt_list, verbose=True): # gpt-3.5-turbo
+        self.client = _client
 
-        prompt = []
-        system_prompt = {"role": "system", "content": "You are a helpful assistant." }
-        prompt.append(system_prompt)
-        if len(prompt_list) % 2 != 1:
-            import pdb; pdb.set_trace()
-        assert len(prompt_list) % 2 == 1
+    def __call__(self, prompt_list, verbose=True):
+        if len(prompt_list) == 1:
+            return self._single_turn(prompt_list[0], verbose=verbose)
+        else:
+            return self._multi_turn(prompt_list, verbose=verbose)
 
-        for i in range(len(prompt_list)):
-
-            if i // 2 == 0:
-                # user prompt
-                new_prompt = {"role": "user"}
-                new_prompt["content"] = prompt_list[i]
-                prompt.append(new_prompt)
-            else:
-                # assistant response
-                new_prompt = {"role": "assistant"}
-                new_prompt["content"] = prompt_list[i]
-                prompt.append(new_prompt)
-
-        res = self.get_chatgpt_response(prompt, verbose=verbose)
-        response = self.get_chatgpt_response_content(res)
-        return response
-    
-    def get_chatgpt_response(self, post,
-                         verbose=False,
-                         presence_penalty=0, frequency_penalty=0,
-                         num_retries=20, wait=5,): # gpt-3.5-turbo
-        time_out = 60 if self.model == 'gpt-4' else 30
+    def _single_turn(self, prompt, verbose=True, num_retries=10, wait=5):
         if verbose:
-            print(f'Calling ChatGPT. Input length: {len(post[-1]["content"])}')
-        while True:
-            try:
-                ret = openai.ChatCompletion.create(
-                    model=self.model,
-                    messages=post,
-                    presence_penalty=presence_penalty,
-                    frequency_penalty=frequency_penalty,
-                    request_timeout=time_out,
-                )
-                break
-            except Exception as e:
-                if num_retries == 0:
-                    raise RuntimeError
-                num_retries -= 1
-                print(f'[ERROR] {e}.\nWait for {wait} seconds and retry...')
-                time.sleep(wait)
-                wait = 50
-    
-        return ret
-    
-    def get_chatgpt_response_content(self, response):
+            print(f"Calling OpenAI ({self.model})... Input length: {len(prompt)}")
 
-        assert len(response['choices']) == 1
-        return response['choices'][0]['message']['content'].strip()
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": prompt}
+        ]
+
+        return self._send_request(messages, verbose, num_retries, wait)
+
+    def _multi_turn(self, prompt_list, verbose=True, num_retries=10, wait=5):
+        if verbose:
+            print(f"Calling OpenAI ({self.model}) multi-turn... {len(prompt_list)} messages")
+
+        messages = [{"role": "system", "content": "You are a helpful assistant."}]
+        for i, prompt in enumerate(prompt_list):
+            role = "user" if i % 2 == 0 else "assistant"
+            messages.append({"role": role, "content": prompt})
+
+        return self._send_request(messages, verbose, num_retries, wait)
+
+    def _send_request(self, messages, verbose, num_retries, wait):
+        for attempt in range(num_retries):
+            try:
+                kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": 1.0 if ('gpt-5' in self.model or 'o1' in self.model) else 0.0,
+                    "max_tokens": self.max_tokens
+                }
+                
+                if 'gpt-5' in self.model or 'gpt-4o' in self.model or 'o1' in self.model:
+                    kwargs['max_completion_tokens'] = kwargs.pop('max_tokens')
+
+                response = self.client.chat.completions.create(**kwargs)
+                
+                if response.choices and response.choices[0].message.content:
+                    return response.choices[0].message.content.strip()
+                return "Error: Empty response from model."
+            
+            except RateLimitError as e:
+                wait_time = wait * (2 ** attempt)
+                if verbose:
+                    print(f"Rate limited. Waiting {wait_time}s... (attempt {attempt+1}/{num_retries})")
+                time.sleep(wait_time)
+            except APITimeoutError as e:
+                if verbose:
+                    print(f"Timeout. Waiting {wait}s... (attempt {attempt+1}/{num_retries})")
+                time.sleep(wait)
+            except APIError as e:
+                error_str = str(e)
+                # Non-retryable safety blocks from the API
+                non_retryable = ['invalid_prompt', 'cyber_policy', 'content_policy',
+                                 'safety reasons', 'flagged for possible']
+                if any(code in error_str for code in non_retryable):
+                    if verbose:
+                        print(f"[BLOCKED] Content safety block (non-retryable): {e}")
+                    return "I'm sorry, but I can't assist with that request."
+                if verbose:
+                    print(f"[ERROR] API Error: {e}. Retrying...")
+                time.sleep(wait)
+            except Exception as e:
+                if verbose:
+                    print(f"[ERROR] {e}. Waiting {wait}s... (attempt {attempt+1}/{num_retries})")
+                time.sleep(wait)
+
+        return "Sorry, OpenAI failed to respond after multiple retries."

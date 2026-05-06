@@ -24,13 +24,24 @@ import json
 import random
 import numpy as np
 from collections import OrderedDict
-import torch
-import torch.nn.functional as F
-from transformers import GPT2Tokenizer, set_seed
 
 from ..utils.sentence_tokenizer import Text_Embedding_Ada
 from ..utils.GPTWrapper import GPTAPIWrapper
-from ..utils.GeminiWrapper import GeminiAPIWrapper
+
+def _cosine_similarity(a, b):
+    """Numpy-based cosine similarity between two vectors."""
+    a = np.asarray(a, dtype=np.float32).flatten()
+    b = np.asarray(b, dtype=np.float32).flatten()
+    dot = np.dot(a, b)
+    norm = np.linalg.norm(a) * np.linalg.norm(b)
+    if norm == 0:
+        return 0.0
+    return dot / norm
+
+
+def _estimate_tokens(text):
+    """Rough token count estimation (~4 chars per token)."""
+    return len(text) // 4
 
 class DrAttack_random_search():
 
@@ -52,11 +63,8 @@ class DrAttack_random_search():
         self.vis_dict_path = vis_dict_path
         self.worker = worker
 
-        if self.suffix:
-            self.demo_suffix_template = demo_suffix_template
-
-        if self.gpt_eval:
-            self.gpt_eval_template = gpt_eval_template
+        self.demo_suffix_template = demo_suffix_template
+        self.gpt_eval_template = gpt_eval_template
 
         if self.noun_wordgame:
             # pre-defined fruit word list for word game
@@ -545,7 +553,7 @@ class DrAttack_random_search():
 
                     prompt_synonym = orig_prompt.replace(self.sub_words[sub_word_idx], word_synonym)
 
-                    prompt_synonym_embed = self.text_embedding_ada.get_embedding(prompt_synonym)[0][0].float()
+                    prompt_synonym_embed = self.text_embedding_ada.get_embedding(prompt_synonym)[0][0].astype(np.float32)
 
                     # similarity for thresholding
                     similarity = sum([self.process_and_score(prompt_synonym_embed, orig_prompt, fn) for fn in self.process_fns_self]) + 1
@@ -630,11 +638,8 @@ class DrAttack_random_search():
 
                     self.prompt_num += 1
 
-                tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-                promt_tokens = tokenizer.encode(prompt, add_special_tokens=False)
-
                 self.new_prompts_list.append(prompt)
-                self.token_num_list.append(len(promt_tokens))
+                self.token_num_list.append(_estimate_tokens(prompt))
 
             elif self.worker.model_name == "gemini":
 
@@ -659,11 +664,8 @@ class DrAttack_random_search():
 
                     self.prompt_num += 1
 
-                tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-                promt_tokens = tokenizer.encode(prompt, add_special_tokens=False)
-
                 self.new_prompts_list.append(prompt)
-                self.token_num_list.append(len(promt_tokens))
+                self.token_num_list.append(_estimate_tokens(prompt))
             # targeted at vicuna
             elif self.worker.model_name == "vicuna":
                 goal = self.attack_prompt
@@ -777,12 +779,12 @@ class DrAttack_random_search():
             jailbroken = False
 
             if self.gpt_eval and jailbroken_str:
-                eval = self.gpt_eval_template.replace("{model response to be evaluated}", output)
-                model = GPTAPIWrapper()
-                res = model([eval])
-                jailbroken = True if  "Yes" in res or "yes" in res else False
+                eval_prompt = self.gpt_eval_template.replace("{model response to be evaluated}", output)
+                evaluator = GPTAPIWrapper(model="gpt-4o-mini")
+                res = evaluator([eval_prompt])
+                jailbroken = True if "Yes" in res or "yes" in res else False
 
-            output_embed = self.text_embedding_ada.get_embedding(output)[0][0].float()
+            output_embed = self.text_embedding_ada.get_embedding(output)[0][0].astype(np.float32)
             
             scores = [self.process_and_score(output_embed, goal, fn) for fn in self.process_fns]
             scores_opposite = [self.process_and_score(output_embed, goal, fn) for fn in self.process_fns_negative]
@@ -805,8 +807,8 @@ class DrAttack_random_search():
     
     def process_and_score(self, output_embed, exp_output, process_fn):
         processed_target = process_fn(exp_output)
-        exp_output_embed = self.text_embedding_ada.get_embedding(processed_target)[0][0].float()
-        score = -F.cosine_similarity(output_embed, exp_output_embed, dim=0).numpy()
+        exp_output_embed = self.text_embedding_ada.get_embedding(processed_target)[0][0].astype(np.float32)
+        score = -_cosine_similarity(output_embed, exp_output_embed)
         return score
     
     # helper function for open-source LLM
@@ -830,7 +832,6 @@ class DrAttack_random_search():
         post_processed_output = word_game_output
         return post_processed_output
 
-    @torch.no_grad()
     def evolve(self):
 
         # In case prompt is not successfully decomposed
@@ -852,10 +853,10 @@ class DrAttack_random_search():
 
             jailbroken = not any([prefix in output for prefix in self.test_prefixes])
             if self.gpt_eval and jailbroken:
-                eval = self.gpt_eval_template.replace("{model response to be evaluated}", output)
-                model = GPTAPIWrapper()
-                res = model([eval])
-                jailbroken = True if  "Yes" in res or "yes" in res else False
+                eval_prompt = self.gpt_eval_template.replace("{model response to be evaluated}", output)
+                evaluator = GPTAPIWrapper(model="gpt-4o-mini")
+                res = evaluator([eval_prompt])
+                jailbroken = True if "Yes" in res or "yes" in res else False
             
             if jailbroken and np.min(scores) < 0:
                 self.save_visited()

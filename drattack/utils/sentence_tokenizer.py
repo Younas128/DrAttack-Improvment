@@ -2,64 +2,59 @@
 Sentence Tokenizer: Text embedding and semantic similarity scoring
 
 This module provides:
-- Text_Embedding_Ada class for obtaining embeddings via OpenAI's ada-002 model
+- Text_Embedding_Ada class for obtaining embeddings via OpenAI's text-embedding-ada-002
 - Caching mechanism to avoid duplicate embedding API calls
-- Semantic similarity scoring using cosine distance
-- Timeout and retry logic for API reliability
-
-Usage:
-- Get embeddings: embeddings = tokenizer.get_embedding(text)
-- Cache management for efficient batch processing
+- Numpy-based operations
 """
 
+import numpy as np
 import time
-import openai
-import os
-import torch
+from .GPTWrapper import _client
 
-with open('../../api_keys/openai_key.txt') as file:
-    openai_key = file.read()
-openai.api_key = openai_key
-
-class Text_Embedding_Ada():
+class Text_Embedding_Ada:
+    """
+    Text embedding class using OpenAI's text-embedding-ada-002.
+    """
 
     def __init__(self, model="text-embedding-ada-002"):
-
         self.model = model
-        self.load_saved_embeddings()
-
-    def load_saved_embeddings(self):
-
-        self.path = '../cache/ada_embeddings.pth'
-        os.makedirs(os.path.dirname(os.path.abspath(self.path)), exist_ok=True)
+        self.client = _client
         self.embedding_cache = {}
 
     def get_embedding(self, text):
-
+        """
+        Get embedding for text. Returns numpy array shaped (1, 1, dim).
+        """
         text = text.replace("\n", " ")
 
-        ## memoization
         if text in self.embedding_cache:
             return self.embedding_cache[text]
 
         ret = None
-        while ret is None:
+        wait = 5
+        max_retries = 10
+
+        for attempt in range(max_retries):
             try:
-                response = openai.Embedding.create(input=[text],
-                            model=self.model,
-                            request_timeout=10)['data'][0]['embedding']
-                ret = torch.tensor(response).unsqueeze(0).unsqueeze(0)
-
+                response = self.client.embeddings.create(
+                    input=[text],
+                    model=self.model
+                )
+                embedding_values = response.data[0].embedding
+                ret = np.array(embedding_values, dtype=np.float32).reshape(1, 1, -1)
+                break
             except Exception as e:
-                print(e)
-                if 'rate limit' in str(e).lower():  ## rate limit exceed
-                    print('wait for 20s and retry...')
-                    time.sleep(20)
+                error_msg = str(e).lower()
+                if "rate" in error_msg or "429" in error_msg:
+                    wait_time = wait * (2 ** attempt)
+                    print(f"Embedding rate limited. Waiting {wait_time}s...")
+                    time.sleep(wait_time)
                 else:
-                    print('Retrying...')
-                    time.sleep(5)
-    
-        self.embedding_cache[text] = ret
-        torch.save(self.embedding_cache, self.path)
+                    print(f"Embedding error: {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
 
+        if ret is None:
+            raise RuntimeError(f"Failed to get embedding after {max_retries} retries")
+
+        self.embedding_cache[text] = ret
         return ret
