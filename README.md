@@ -50,6 +50,8 @@ For more details, please refer to our [project webpage](https://xirui-li.github.
 
  - Our paper is mentioned in one __MEDIUM__ blog, [_LLM Jailbreak: Red Teaming with ArtPrompt, Morse Code, and DrAttack_](https://ai.plainenglish.io/llm-jailbreak-comparing-drattack-artprompt-and-morse-code-17acb0f18be8).
 
+ - Repository housekeeping: added `.gitignore` and short change docs under `docs/changes/`; stopped tracking local `api_keys/` and documented next steps to purge history if needed. See `docs/changes/03-commit-and-push.md` for commands and caveats.
+
 ## Installation
 
 We need the newest version of FastChat `fschat==0.2.23` and please make sure to install this version. The `llm-attacks` package can be installed by running the following command at the root of this repository:
